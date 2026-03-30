@@ -1,7 +1,7 @@
 # provenance
 
 [![CI](https://github.com/NetRiseInc/provenance-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/NetRiseInc/provenance-cli/actions/workflows/ci.yml)
-[![Release](https://github.com/NetRiseInc/provenance-cli/actions/workflows/release.yml/badge.svg)](https://github.com/NetRiseInc/provenance-cli/releases/latest)
+[![Release](https://img.shields.io/github/v/release/NetRiseInc/provenance-cli)](https://github.com/NetRiseInc/provenance-cli/releases/latest)
 
 Software supply chain intelligence from the command line.
 
