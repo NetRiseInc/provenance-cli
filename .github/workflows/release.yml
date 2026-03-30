@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate-version:
+    name: Validate tag/Cargo.toml version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract and compare versions
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          CARGO_VERSION="$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')"
+          echo "Tag version:   $TAG_VERSION"
+          echo "Cargo version: $CARGO_VERSION"
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Version mismatch: tag v${TAG_VERSION} does not match Cargo.toml version ${CARGO_VERSION}"
+            exit 1
+          fi
+          echo "Versions match."
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: validate-version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive_name: provenance-linux-x86_64-gnu
+            cross: false
+
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            archive_name: provenance-linux-x86_64-musl
+            cross: false
+            install: musl-tools
+
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            archive_name: provenance-linux-aarch64
+            cross: true
+            install: gcc-aarch64-linux-gnu
+
+          - target: x86_64-apple-darwin
+            os: macos-13
+            archive_name: provenance-darwin-x86_64
+            cross: false
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            archive_name: provenance-darwin-aarch64
+            cross: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+
+      - name: Install cross-compilation tools
+        if: matrix.install
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.install }}
+
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross --locked || true
+
+      - name: Build (native)
+        if: "!matrix.cross"
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Package binary
+        run: |
+          tar -czf ${{ matrix.archive_name }}.tar.gz \
+            -C target/${{ matrix.target }}/release provenance
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive_name }}
+          path: ${{ matrix.archive_name }}.tar.gz
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Collect archives and generate checksums
+        run: |
+          mkdir -p release/
+          find artifacts/ -name '*.tar.gz' -exec cp {} release/ \;
+          cd release/
+          sha256sum *.tar.gz > checksums-sha256.txt
+          echo "### Release artifacts" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat checksums-sha256.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+          files: |
+            release/*.tar.gz
+            release/checksums-sha256.txt

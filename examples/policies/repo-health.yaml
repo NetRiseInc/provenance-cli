@@ -1,0 +1,59 @@
+# Repository Health Policy
+#
+# Evaluates the health and maintenance status of a package's source
+# repository. Healthy repositories are more likely to receive timely
+# security patches and less likely to have undetected vulnerabilities.
+#
+# This policy uses the Provenance repo health API to check:
+#   - Bus factor: how many active maintainers the project has
+#   - Archive/deprecation status: whether the project is still maintained
+#   - Commit recency: whether the project is actively developed
+#   - Signed commit ratio: whether contributors sign their work
+#
+# Customize by:
+#   - Adjusting thresholds (bus_factor, commit days, scorecard score)
+#   - Changing action levels based on your risk tolerance
+#   - Adding allow rules for repos you've manually assessed
+
+apiVersion: netrise/v1
+kind: Policy
+metadata:
+  name: repo-health
+  description: Evaluate repository health and maintenance status
+spec:
+  rules:
+    # Deny archived repos with low bus factor — unmaintained and risky
+    - name: deny-archived-low-bus-factor
+      description: Deny archived repos with bus factor below 2
+      action: deny
+      match:
+        repo_archived: true
+        bus_factor_below: 2
+
+    # Deny on very low bus factor alone
+    - name: deny-single-maintainer
+      description: Deny packages from single-maintainer repos
+      action: deny
+      match:
+        bus_factor_below: 2
+
+    # Review repos with no recent commits (stale for a year)
+    - name: review-stale-repo
+      description: Review repos with no commits in 365 days
+      action: review
+      match:
+        no_recent_commits_days: 365
+
+    # Warn on low scorecard score
+    - name: warn-low-scorecard
+      description: Flag repos with low OpenSSF scorecard scores
+      action: warn
+      match:
+        scorecard_score_below: 5.0
+
+    # Info on low signed commit ratio
+    - name: info-unsigned-commits
+      description: Note repos with low signed commit ratio
+      action: info
+      match:
+        signed_commit_ratio_below: 0.5

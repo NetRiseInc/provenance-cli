@@ -1,0 +1,73 @@
+# Demo Policy
+#
+# A curated policy designed to produce interesting findings when scanning
+# debian:bookworm-slim. Uses warn/review/info actions (not deny) so that
+# the demo pipeline completes green while still showing real findings.
+#
+# Usage:
+#   provenance check demo/sample-sbom.cdx.json --policy demo/policies/demo-policy.yaml
+
+apiVersion: netrise/v1
+kind: Policy
+metadata:
+  name: demo-policy
+  description: Demonstration policy showing all condition types with non-blocking actions
+spec:
+  rules:
+    # Warn on contributors from Russia — common among Debian maintainers
+    - name: warn-russia-contributors
+      description: Flag packages with Russian contributors
+      action: warn
+      message: "Package has contributors from Russia (partial OFAC sanctions)"
+      match:
+        contributor_countries:
+          - RU
+
+    # Warn on low bus factor — will flag smaller packages
+    - name: warn-low-bus-factor
+      description: Flag packages from repositories with few maintainers
+      action: warn
+      message: "Repository has a bus factor below 3"
+      match:
+        bus_factor_below: 3
+
+    # Warn on stale repositories (no commits in 180 days)
+    - name: warn-stale-repo
+      description: Flag packages with no recent development activity
+      action: warn
+      message: "No commits in the last 180 days"
+      match:
+        no_recent_commits_days: 180
+
+    # Info on low signed commit ratio
+    - name: info-low-signing-ratio
+      description: Note repos where less than half of commits are signed
+      action: info
+      message: "Less than 50% of commits are signed"
+      match:
+        signed_commit_ratio_below: 0.5
+
+    # Info on missing license assertions
+    - name: info-no-license
+      description: Note packages with no license assertion
+      action: info
+      message: "Package has no SPDX license assertion"
+      match:
+        license_spdx:
+          - NOASSERTION
+
+    # Review if direct advisories exist
+    - name: review-direct-advisory
+      description: Review packages with known direct security advisories
+      action: review
+      message: "Package has a direct security advisory"
+      match:
+        advisory_relationship: direct
+
+    # Review on breached credentials
+    - name: review-breached-credentials
+      description: Review packages with contributors who have breached credentials
+      action: review
+      message: "A contributor has credentials found in known data breaches"
+      match:
+        has_breached_credentials: true

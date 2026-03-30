@@ -1,0 +1,19 @@
+/target
+
+# Sensitive files
+.env
+*.env
+config.yaml
+*.pem
+*.key
+
+# OCI scan cache
+provenance-oci-cache/
+
+# Release artifacts
+*.tar.gz
+checksums-sha256.txt
+
+# Demo generated files
+results.json
+results.sarif

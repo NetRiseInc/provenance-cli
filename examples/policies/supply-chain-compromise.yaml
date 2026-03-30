@@ -1,0 +1,63 @@
+# Supply Chain Compromise Detection Policy
+#
+# Detects indicators of supply chain compromise based on the
+# Provenance advisory database and contributor security posture.
+#
+# This policy is modeled after the XZ Utils compromise (CVE-2024-3094),
+# where a malicious contributor gained commit access, introduced a
+# backdoor, and changed signing keys.
+#
+# Risk indicators:
+#   - Direct advisory relationship: the package itself is known to be affected
+#   - Indirect advisory + key change: compromise may have spread through
+#     a contributor who also changed their signing key
+#   - Key change alone: suspicious but not necessarily malicious
+#
+# Customize by:
+#   - Adjusting advisory name patterns to match your threat intelligence
+#   - Adding allow rules for packages you've manually reviewed
+
+apiVersion: netrise/v1
+kind: Policy
+metadata:
+  name: supply-chain-compromise
+  description: Detect indicators of supply chain compromise
+spec:
+  rules:
+    # Deny any package with a direct advisory — it's known to be affected
+    - name: deny-direct-advisory
+      description: Block packages with direct security advisories
+      action: deny
+      match:
+        advisory_relationship: direct
+
+    # Review if the package has an indirect advisory AND a signing key change
+    # This combination suggests the compromise may have spread
+    - name: review-indirect-advisory-with-key-change
+      description: Review packages with indirect advisories and signing key changes
+      action: review
+      match:
+        advisory_relationship: indirect
+        key_change_detected: true
+
+    # Review indirect advisories alone
+    - name: review-indirect-advisory
+      description: Review packages with indirect security advisories
+      action: review
+      match:
+        advisory_relationship: indirect
+
+    # Warn on signing key changes (could be legitimate rotation)
+    - name: warn-key-change
+      description: Flag signing key changes for awareness
+      action: warn
+      match:
+        key_change_detected: true
+
+    # Warn on specific advisory patterns
+    - name: warn-netr-advisories
+      description: Flag Provenance-specific advisories
+      action: warn
+      match:
+        advisory_names:
+          - "NETR-*"

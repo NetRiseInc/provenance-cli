@@ -1,0 +1,55 @@
+# Contributor Risk Assessment Policy
+#
+# Evaluates the security posture of package contributors.
+# Compromised contributor accounts are a primary vector for
+# supply chain attacks.
+#
+# Risk indicators:
+#   - Breached credentials: contributor's credentials found in known breaches
+#   - Key change: signing key was changed (could indicate compromise or rotation)
+#   - Low signed commit ratio: makes it harder to verify commit authenticity
+#
+# The combination of breached credentials AND key change is particularly
+# concerning — it suggests an attacker may have taken over the account
+# and rotated the signing key.
+#
+# Customize by:
+#   - Adjusting the signed_commit_ratio threshold
+#   - Adding allow rules for specific packages with known-safe contributors
+#   - Changing deny to review if you want human oversight
+
+apiVersion: netrise/v1
+kind: Policy
+metadata:
+  name: contributor-risk
+  description: Assess contributor security posture and breach risk
+spec:
+  rules:
+    # Deny if BOTH breached credentials AND key change — strong compromise signal
+    - name: deny-breached-with-key-change
+      description: Deny when contributor has breached credentials and key change
+      action: deny
+      match:
+        has_breached_credentials: true
+        key_change_detected: true
+
+    # Review breached credentials alone — may not indicate active compromise
+    - name: review-breached-credentials
+      description: Review packages with contributors who have breached credentials
+      action: review
+      match:
+        has_breached_credentials: true
+
+    # Warn on key change alone — could be legitimate rotation
+    - name: warn-key-change
+      description: Flag signing key changes for awareness
+      action: warn
+      match:
+        key_change_detected: true
+
+    # Info on low signed commit ratio
+    - name: info-low-signing-ratio
+      description: Note repos where less than half of commits are signed
+      action: info
+      match:
+        signed_commit_ratio_below: 0.5

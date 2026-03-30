@@ -1,0 +1,62 @@
+# OFAC Compliance Policy
+#
+# Flags packages that have contributors from OFAC-sanctioned countries.
+# The US Office of Foreign Assets Control (OFAC) restricts transactions
+# with individuals and entities in sanctioned countries.
+#
+# This policy is intentionally conservative — it flags for review rather
+# than outright denying, since open source contributors may be US persons
+# or dual nationals who happen to be located in sanctioned countries.
+#
+# Sanctioned countries (as of 2024):
+#   CU - Cuba
+#   IR - Iran
+#   KP - North Korea
+#   SY - Syria
+#   RU - Russia (partial sanctions)
+#
+# Customize by:
+#   - Adding/removing country codes
+#   - Changing action levels (deny vs review)
+#   - Adding allow rules for vetted packages
+
+apiVersion: netrise/v1
+kind: Policy
+metadata:
+  name: ofac-compliance
+  description: Flag packages with contributors from OFAC-sanctioned countries
+spec:
+  rules:
+    # Allow well-known, widely-used packages even if they have
+    # contributors from sanctioned countries
+    - name: allow-linux-kernel
+      description: Linux kernel is too fundamental to block
+      action: allow
+      match:
+        package_purl: "pkg:generic/linux-kernel@*"
+
+    # Deny packages with contributors from the most heavily sanctioned countries
+    - name: deny-north-korea-contributors
+      description: Deny packages with North Korean contributors
+      action: deny
+      match:
+        contributor_countries:
+          - KP
+
+    # Review (human decision required) for other sanctioned countries
+    - name: review-sanctioned-country-contributors
+      description: Review packages with contributors from OFAC-sanctioned countries
+      action: review
+      match:
+        contributor_countries:
+          - CU
+          - IR
+          - SY
+
+    # Warn on Russian contributors (partial sanctions)
+    - name: warn-russia-contributors
+      description: Flag packages with Russian contributors for awareness
+      action: warn
+      match:
+        contributor_countries:
+          - RU

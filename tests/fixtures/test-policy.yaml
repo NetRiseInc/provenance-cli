@@ -1,0 +1,22 @@
+apiVersion: netrise/v1
+kind: Policy
+metadata:
+  name: test-policy
+  description: Test policy for unit tests
+spec:
+  rules:
+    - name: deny-direct-advisory
+      description: Deny packages with direct advisory relationships
+      action: deny
+      match:
+        advisory_relationship: direct
+    - name: review-low-bus-factor
+      description: Review packages from repos with bus factor below 2
+      action: review
+      match:
+        bus_factor_below: 2
+    - name: warn-key-change
+      description: Warn on signing key changes
+      action: warn
+      match:
+        key_change_detected: true

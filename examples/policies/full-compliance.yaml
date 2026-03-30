@@ -1,0 +1,194 @@
+# Full Compliance Policy
+#
+# Comprehensive policy combining rules from all four domains:
+#   1. OFAC compliance (contributor country checks)
+#   2. Supply chain compromise detection (advisory relationships, key changes)
+#   3. Repository health (bus factor, staleness, scorecard)
+#   4. Contributor risk (breached credentials, signing practices)
+#
+# This policy is intentionally strict — it's designed for high-security
+# environments where software supply chain risk must be minimized.
+# Adjust action levels and thresholds based on your organization's
+# risk tolerance.
+#
+# Exit codes when used with `provenance check`:
+#   0 = PASS (all clear, or only info/warn findings)
+#   1 = DENY (at least one deny rule matched)
+#   2 = REVIEW (at least one review rule, but no denies)
+#
+# Usage:
+#   provenance check my-sbom.json --policy examples/policies/full-compliance.yaml
+#   provenance check 'pkg:deb/debian/xz-utils@5.0.0-2' --policy examples/policies/full-compliance.yaml
+
+apiVersion: netrise/v1
+kind: Policy
+metadata:
+  name: full-compliance
+  description: Comprehensive supply chain compliance policy
+spec:
+  rules:
+    # ── SUPPLY CHAIN COMPROMISE ──────────────────────────────────────────
+
+    # Hard deny on direct advisories
+    - name: deny-direct-advisory
+      description: Block packages with known direct security advisories
+      action: deny
+      match:
+        advisory_relationship: direct
+
+    # ── CONTRIBUTOR RISK ─────────────────────────────────────────────────
+
+    # Hard deny on breached credentials + key change combination
+    - name: deny-compromised-contributor
+      description: Block when contributor shows signs of account compromise
+      action: deny
+      match:
+        has_breached_credentials: true
+        key_change_detected: true
+
+    # ── REPOSITORY HEALTH ────────────────────────────────────────────────
+
+    # Hard deny on archived single-maintainer repos
+    - name: deny-abandoned-repo
+      description: Block packages from archived repos with single maintainer
+      action: deny
+      match:
+        repo_archived: true
+        bus_factor_below: 2
+
+    # ── OFAC COMPLIANCE ──────────────────────────────────────────────────
+
+    # Deny North Korean contributors
+    - name: deny-kp-contributors
+      description: Block packages with North Korean contributors
+      action: deny
+      match:
+        contributor_countries:
+          - KP
+
+    # ── TARGETED CONTRIBUTOR RISK ────────────────────────────────────────
+
+    # Hard deny on known-compromised contributor emails (e.g., Jia Tan)
+    - name: deny-known-compromised-emails
+      description: Block packages with contributors matching known compromised email addresses
+      action: deny
+      match:
+        contributor_emails:
+          - "jiat0218@gmail.com"
+          - "jiat75@gmail.com"
+
+    # Review packages with contributors using anonymous email providers
+    - name: review-anonymous-email-contributors
+      description: Review packages with contributors using anonymous email providers
+      action: review
+      match:
+        contributor_emails:
+          - "*@protonmail.com"
+          - "*@tutanota.com"
+
+    # ── REPOSITORY SOURCE CONTROL ────────────────────────────────────────
+
+    # Review packages from blocked repository organizations
+    - name: review-blocked-repo-orgs
+      description: Review packages sourced from flagged repository organizations
+      action: review
+      match:
+        repo_urls:
+          - "*github.com/blocked-org/*"
+
+    # Informational: track repository source for visibility
+    - name: info-repo-source-tracking
+      description: Note packages from the tukaani-project for ongoing monitoring
+      action: info
+      match:
+        repo_urls:
+          - "*tukaani-project*"
+
+    # ── REVIEW-LEVEL FINDINGS ────────────────────────────────────────────
+
+    # Review indirect advisories with key changes
+    - name: review-indirect-advisory-key-change
+      description: Review packages with indirect advisories and key changes
+      action: review
+      match:
+        advisory_relationship: indirect
+        key_change_detected: true
+
+    # Review indirect advisories
+    - name: review-indirect-advisory
+      description: Review packages with indirect security advisories
+      action: review
+      match:
+        advisory_relationship: indirect
+
+    # Review breached credentials
+    - name: review-breached-credentials
+      description: Review packages with contributors who have breached credentials
+      action: review
+      match:
+        has_breached_credentials: true
+
+    # Review single-maintainer repos
+    - name: review-low-bus-factor
+      description: Review packages from single-maintainer repos
+      action: review
+      match:
+        bus_factor_below: 2
+
+    # Review stale repos
+    - name: review-stale-repo
+      description: Review repos with no commits in 365 days
+      action: review
+      match:
+        no_recent_commits_days: 365
+
+    # Review sanctioned country contributors
+    - name: review-sanctioned-countries
+      description: Review packages with contributors from sanctioned countries
+      action: review
+      match:
+        contributor_countries:
+          - CU
+          - IR
+          - SY
+
+    # ── WARNING-LEVEL FINDINGS ───────────────────────────────────────────
+
+    # Warn on key changes
+    - name: warn-key-change
+      description: Flag signing key changes
+      action: warn
+      match:
+        key_change_detected: true
+
+    # Warn on low scorecard
+    - name: warn-low-scorecard
+      description: Flag repos with low OpenSSF scorecard scores
+      action: warn
+      match:
+        scorecard_score_below: 5.0
+
+    # Warn on Russian contributors
+    - name: warn-russia-contributors
+      description: Flag packages with Russian contributors
+      action: warn
+      match:
+        contributor_countries:
+          - RU
+
+    # ── INFORMATIONAL FINDINGS ───────────────────────────────────────────
+
+    # Info on unsigned commits
+    - name: info-unsigned-commits
+      description: Note repos with low signed commit ratio
+      action: info
+      match:
+        signed_commit_ratio_below: 0.5
+
+    # Info on no-assertion license
+    - name: info-no-license
+      description: Note packages with no license assertion
+      action: info
+      match:
+        license_spdx:
+          - NONE

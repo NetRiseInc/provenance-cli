@@ -1,0 +1,256 @@
+name: "Provenance Supply Chain Check"
+description: "Download the provenance CLI and run a supply chain check against an SBOM or package."
+author: "NetRise, Inc."
+
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  sbom:
+    description: "Path to the SBOM file to check"
+    required: false
+    default: ""
+  package:
+    description: "Package URL (PURL) to check (alternative to sbom)"
+    required: false
+    default: ""
+  policy:
+    description: "Path to policy file or directory"
+    required: false
+    default: ""
+  format:
+    description: "Output format: human, json, sarif"
+    required: false
+    default: "human"
+  api-token:
+    description: "Provenance API token (use secrets.PROVENANCE_API_TOKEN)"
+    required: true
+  version:
+    description: "CLI version to download (e.g., v0.1.0). Defaults to latest."
+    required: false
+    default: "latest"
+  quiet:
+    description: "Show only summary output"
+    required: false
+    default: "false"
+
+outputs:
+  exit-code:
+    description: "Exit code from provenance check (0=pass, 1=deny, 2=review, 3=error)"
+    value: ${{ steps.run-check.outputs.exit-code }}
+  sarif-file:
+    description: "Path to SARIF output file (when format=sarif)"
+    value: ${{ steps.set-outputs.outputs.sarif-file }}
+  json-file:
+    description: "Path to JSON output file (when format=json)"
+    value: ${{ steps.set-outputs.outputs.json-file }}
+
+runs:
+  using: "composite"
+  steps:
+    - id: resolve-version
+      name: Resolve CLI version
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        VERSION="${{ inputs.version }}"
+        if [ "$VERSION" = "latest" ]; then
+          VERSION=$(gh api repos/NetRiseInc/provenance-cli/releases/latest --jq '.tag_name' 2>/dev/null || true)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Failed to resolve latest version. Specify an explicit version instead."
+            exit 1
+          fi
+        fi
+        # Ensure version starts with 'v'
+        case "$VERSION" in
+          v*) ;;
+          *)  VERSION="v${VERSION}" ;;
+        esac
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        echo "Resolved version: $VERSION"
+
+    - id: detect-platform
+      name: Detect platform
+      shell: bash
+      run: |
+        OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        ARCH="$(uname -m)"
+
+        case "$OS" in
+          linux)  PLATFORM_OS="linux" ;;
+          darwin) PLATFORM_OS="darwin" ;;
+          *)
+            echo "::error::Unsupported OS: $OS"
+            exit 1
+            ;;
+        esac
+
+        case "$ARCH" in
+          x86_64|amd64) PLATFORM_ARCH="x86_64" ;;
+          aarch64|arm64) PLATFORM_ARCH="aarch64" ;;
+          *)
+            echo "::error::Unsupported architecture: $ARCH"
+            exit 1
+            ;;
+        esac
+
+        if [ "$PLATFORM_OS" = "linux" ] && [ "$PLATFORM_ARCH" = "x86_64" ]; then
+          ARCHIVE_NAME="provenance-linux-x86_64-gnu"
+        elif [ "$PLATFORM_OS" = "darwin" ] && [ "$PLATFORM_ARCH" = "x86_64" ]; then
+          ARCHIVE_NAME="provenance-darwin-x86_64"
+        elif [ "$PLATFORM_OS" = "darwin" ] && [ "$PLATFORM_ARCH" = "aarch64" ]; then
+          ARCHIVE_NAME="provenance-darwin-aarch64"
+        elif [ "$PLATFORM_OS" = "linux" ] && [ "$PLATFORM_ARCH" = "aarch64" ]; then
+          ARCHIVE_NAME="provenance-linux-aarch64"
+        else
+          echo "::error::No pre-built binary for ${PLATFORM_OS}/${PLATFORM_ARCH}"
+          exit 1
+        fi
+
+        echo "archive_name=$ARCHIVE_NAME" >> "$GITHUB_OUTPUT"
+        echo "Detected platform: ${PLATFORM_OS}/${PLATFORM_ARCH} -> ${ARCHIVE_NAME}"
+
+    - id: download
+      name: Download provenance CLI
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        VERSION="${{ steps.resolve-version.outputs.version }}"
+        ARCHIVE="${{ steps.detect-platform.outputs.archive_name }}"
+        DOWNLOAD_URL="https://github.com/NetRiseInc/provenance-cli/releases/download/${VERSION}/${ARCHIVE}.tar.gz"
+        CHECKSUMS_URL="https://github.com/NetRiseInc/provenance-cli/releases/download/${VERSION}/checksums-sha256.txt"
+
+        INSTALL_DIR="${RUNNER_TOOL_CACHE}/provenance/${VERSION}"
+        mkdir -p "$INSTALL_DIR"
+
+        echo "Downloading ${DOWNLOAD_URL}"
+        curl -fsSL \
+          -H "Authorization: token ${GH_TOKEN}" \
+          -H "Accept: application/octet-stream" \
+          -o "${INSTALL_DIR}/${ARCHIVE}.tar.gz" \
+          "$DOWNLOAD_URL"
+
+        echo "Downloading checksums"
+        curl -fsSL \
+          -H "Authorization: token ${GH_TOKEN}" \
+          -H "Accept: application/octet-stream" \
+          -o "${INSTALL_DIR}/checksums-sha256.txt" \
+          "$CHECKSUMS_URL"
+
+        echo "install_dir=$INSTALL_DIR" >> "$GITHUB_OUTPUT"
+        echo "archive=${ARCHIVE}" >> "$GITHUB_OUTPUT"
+
+    - id: verify-checksum
+      name: Verify SHA256 checksum
+      shell: bash
+      run: |
+        INSTALL_DIR="${{ steps.download.outputs.install_dir }}"
+        ARCHIVE="${{ steps.download.outputs.archive }}"
+
+        cd "$INSTALL_DIR"
+
+        # Extract expected checksum for our archive
+        EXPECTED=$(grep "${ARCHIVE}.tar.gz" checksums-sha256.txt | awk '{print $1}')
+        if [ -z "$EXPECTED" ]; then
+          echo "::error::Archive ${ARCHIVE}.tar.gz not found in checksums-sha256.txt"
+          exit 1
+        fi
+
+        # Compute actual checksum (portable across Linux and macOS)
+        if command -v sha256sum &>/dev/null; then
+          ACTUAL=$(sha256sum "${ARCHIVE}.tar.gz" | awk '{print $1}')
+        else
+          ACTUAL=$(shasum -a 256 "${ARCHIVE}.tar.gz" | awk '{print $1}')
+        fi
+
+        echo "Expected: $EXPECTED"
+        echo "Actual:   $ACTUAL"
+
+        if [ "$EXPECTED" != "$ACTUAL" ]; then
+          echo "::error::SHA256 checksum mismatch for ${ARCHIVE}.tar.gz"
+          exit 1
+        fi
+
+        echo "Checksum verified."
+
+        # Extract binary
+        tar -xzf "${ARCHIVE}.tar.gz"
+        chmod +x provenance
+        echo "$INSTALL_DIR" >> "$GITHUB_PATH"
+
+    - id: mask-token
+      name: Mask API token
+      shell: bash
+      run: echo "::add-mask::${{ inputs.api-token }}"
+
+    - id: run-check
+      name: Run provenance check
+      shell: bash
+      env:
+        PROVENANCE_API_TOKEN: ${{ inputs.api-token }}
+      run: |
+        CMD="provenance check"
+
+        # Determine target: sbom file or package PURL
+        if [ -n "${{ inputs.sbom }}" ]; then
+          CMD="$CMD ${{ inputs.sbom }}"
+        elif [ -n "${{ inputs.package }}" ]; then
+          CMD="$CMD '${{ inputs.package }}'"
+        else
+          echo "::error::Either 'sbom' or 'package' input is required."
+          exit 1
+        fi
+
+        # Add policy if specified
+        if [ -n "${{ inputs.policy }}" ]; then
+          CMD="$CMD --policy ${{ inputs.policy }}"
+        fi
+
+        # Add format
+        FORMAT="${{ inputs.format }}"
+        CMD="$CMD --format $FORMAT"
+
+        # Add quiet flag
+        if [ "${{ inputs.quiet }}" = "true" ]; then
+          CMD="$CMD --quiet"
+        fi
+
+        # Determine output file based on format
+        OUTPUT_FILE=""
+        if [ "$FORMAT" = "sarif" ]; then
+          OUTPUT_FILE="provenance-results.sarif"
+          CMD="$CMD > $OUTPUT_FILE"
+        elif [ "$FORMAT" = "json" ]; then
+          OUTPUT_FILE="provenance-results.json"
+          CMD="$CMD > $OUTPUT_FILE"
+        fi
+
+        echo "Running: $CMD"
+        set +e
+        eval "$CMD"
+        EXIT_CODE=$?
+        set -e
+
+        echo "exit-code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+        echo "Exit code: $EXIT_CODE"
+
+    - id: set-outputs
+      name: Set outputs
+      shell: bash
+      run: |
+        FORMAT="${{ inputs.format }}"
+
+        if [ "$FORMAT" = "sarif" ] && [ -f provenance-results.sarif ]; then
+          echo "sarif-file=provenance-results.sarif" >> "$GITHUB_OUTPUT"
+        else
+          echo "sarif-file=" >> "$GITHUB_OUTPUT"
+        fi
+
+        if [ "$FORMAT" = "json" ] && [ -f provenance-results.json ]; then
+          echo "json-file=provenance-results.json" >> "$GITHUB_OUTPUT"
+        else
+          echo "json-file=" >> "$GITHUB_OUTPUT"
+        fi

@@ -1,0 +1,4 @@
+purl,name,version
+pkg:deb/debian/xz-utils@5.0.0-2?arch=kfreebsd-amd64&distro=debian-6,xz-utils,5.0.0-2
+pkg:deb/debian/curl@7.68.0-1?arch=amd64&distro=debian-10,curl,7.68.0-1
+pkg:deb/debian/openssl@1.1.1d-0?arch=amd64&distro=debian-10,openssl,1.1.1d-0

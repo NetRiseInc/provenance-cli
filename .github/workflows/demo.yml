@@ -1,0 +1,171 @@
+name: Demo
+
+on:
+  push:
+    branches: [demo]
+  workflow_dispatch:
+    inputs:
+      image:
+        description: "OCI image to scan"
+        default: "debian:bookworm-slim"
+        required: false
+      policy_dir:
+        description: "Policy directory to evaluate"
+        default: "examples/policies/"
+        required: false
+
+permissions:
+  contents: read
+  security-events: write
+
+env:
+  CARGO_TERM_COLOR: always
+  IMAGE: ${{ inputs.image || 'debian:bookworm-slim' }}
+  POLICY_DIR: ${{ inputs.policy_dir || 'examples/policies/' }}
+
+jobs:
+  demo:
+    name: Supply chain scan demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate token
+        run: |
+          if [ -z "${{ secrets.PROVENANCE_API_TOKEN }}" ]; then
+            echo "::error::PROVENANCE_API_TOKEN secret is not set. Add it to your repository secrets."
+            exit 1
+          fi
+
+      - name: Mask token
+        run: echo "::add-mask::${{ secrets.PROVENANCE_API_TOKEN }}"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build provenance CLI
+        run: cargo build --release
+
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@v0
+
+      - name: Generate SBOM
+        run: syft "$IMAGE" -o cyclonedx-json > sbom.cdx.json
+
+      - name: Scan SBOM (human output)
+        continue-on-error: true
+        env:
+          PROVENANCE_API_TOKEN: ${{ secrets.PROVENANCE_API_TOKEN }}
+        run: |
+          ./target/release/provenance scan sbom sbom.cdx.json --format human || true
+
+      - name: Run policy checks (per-policy)
+        continue-on-error: true
+        env:
+          PROVENANCE_API_TOKEN: ${{ secrets.PROVENANCE_API_TOKEN }}
+        run: |
+          for policy in "$POLICY_DIR"*.yaml; do
+            echo "--- Evaluating: $(basename "$policy") ---"
+            ./target/release/provenance check sbom.cdx.json --policy "$policy" --format human || true
+            echo
+          done
+
+      - name: Generate JSON results
+        continue-on-error: true
+        env:
+          PROVENANCE_API_TOKEN: ${{ secrets.PROVENANCE_API_TOKEN }}
+        run: |
+          ./target/release/provenance check sbom.cdx.json \
+            --policy "$POLICY_DIR" --format json > results.json || true
+
+      - name: Generate SARIF results
+        continue-on-error: true
+        env:
+          PROVENANCE_API_TOKEN: ${{ secrets.PROVENANCE_API_TOKEN }}
+        run: |
+          ./target/release/provenance check sbom.cdx.json \
+            --policy "$POLICY_DIR" --format sarif > results.sarif || true
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always() && hashFiles('results.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "## Provenance Supply Chain Scan Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Image: \`$IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -f results.json ] && command -v jq &>/dev/null; then
+            VERDICT=$(jq -r '.verdict // "N/A"' results.json 2>/dev/null || echo "N/A")
+            TOTAL=$(jq '.rules_matched // [] | length' results.json 2>/dev/null || echo "0")
+            UNIQUE_PKGS=$(jq '[.rules_matched // [] | .[].purl] | unique | length' results.json 2>/dev/null || echo "0")
+            DENY=$(jq '[.rules_matched // [] | .[] | select(.action == "DENY")] | length' results.json 2>/dev/null || echo "0")
+            REVIEW=$(jq '[.rules_matched // [] | .[] | select(.action == "REVIEW")] | length' results.json 2>/dev/null || echo "0")
+            WARN=$(jq '[.rules_matched // [] | .[] | select(.action == "WARN")] | length' results.json 2>/dev/null || echo "0")
+            INFO=$(jq '[.rules_matched // [] | .[] | select(.action == "INFO")] | length' results.json 2>/dev/null || echo "0")
+
+            echo "### Verdict: \`$VERDICT\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Metric | Count |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Packages evaluated | $UNIQUE_PKGS |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Total findings | $TOTAL |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Deny | $DENY |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Review | $REVIEW |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Warn | $WARN |" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Info | $INFO |" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+
+            echo "### Top findings (up to 20)" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "| Package | Rule | Action |" >> "$GITHUB_STEP_SUMMARY"
+            echo "|---------|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+            jq -r '
+              [.rules_matched // [] | .[] | select(.action == "DENY" or .action == "REVIEW")]
+              | .[0:20]
+              | .[]
+              | "| `\(.purl | split("?") | .[0])` | \(.rule) | \(.action) |"
+            ' results.json 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || true
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "_No JSON results available or jq not installed._" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "### Policies evaluated" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          for p in "$POLICY_DIR"*.yaml; do
+            echo "- \`$(basename "$p")\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "### Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **SARIF**: See the [Code Scanning tab](../../security/code-scanning) for imported findings" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Artifacts**: Download SBOM, JSON, and SARIF from the Actions artifacts" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: demo-results
+          path: |
+            sbom.cdx.json
+            results.json
+            results.sarif

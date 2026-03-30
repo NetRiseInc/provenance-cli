@@ -1,0 +1,23 @@
+SPDXVersion: SPDX-2.3
+DataLicense: CC0-1.0
+SPDXID: SPDXRef-DOCUMENT
+DocumentName: test-sbom
+DocumentNamespace: https://example.com/test-sbom
+
+PackageName: xz-utils
+SPDXID: SPDXRef-Package-xz-utils
+PackageVersion: 5.0.0-2
+PackageDownloadLocation: NOASSERTION
+ExternalRef: PACKAGE-MANAGER purl pkg:deb/debian/xz-utils@5.0.0-2?arch=kfreebsd-amd64&distro=debian-6
+
+PackageName: curl
+SPDXID: SPDXRef-Package-curl
+PackageVersion: 7.68.0-1
+PackageDownloadLocation: NOASSERTION
+ExternalRef: PACKAGE-MANAGER purl pkg:deb/debian/curl@7.68.0-1?arch=amd64&distro=debian-10
+
+PackageName: openssl
+SPDXID: SPDXRef-Package-openssl
+PackageVersion: 1.1.1d-0
+PackageDownloadLocation: NOASSERTION
+ExternalRef: PACKAGE-MANAGER purl pkg:deb/debian/openssl@1.1.1d-0?arch=amd64&distro=debian-10
