@@ -56,10 +56,10 @@ fi
 
 # ── Guards ───────────────────────────────────────────────────────────────
 
-# Must be on main branch
+# Must be on main or master branch
 CURRENT_BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
-if [ "$CURRENT_BRANCH" != "main" ]; then
-  echo "Error: Must be on 'main' branch (currently on '$CURRENT_BRANCH')."
+if [ "$CURRENT_BRANCH" != "main" ] && [ "$CURRENT_BRANCH" != "master" ]; then
+  echo "Error: Must be on 'main' or 'master' branch (currently on '$CURRENT_BRANCH')."
   exit 1
 fi
 
