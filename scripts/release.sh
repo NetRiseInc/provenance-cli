@@ -162,8 +162,8 @@ echo "Created commit and tag v${NEW_VERSION}."
 # ── Push ─────────────────────────────────────────────────────────────────
 
 echo "Pushing to origin..."
-git -C "$REPO_ROOT" push
-git -C "$REPO_ROOT" push --tags
+git -C "$REPO_ROOT" push origin HEAD:main
+git -C "$REPO_ROOT" push origin --tags
 
 echo ""
 echo "Done! Tag v${NEW_VERSION} pushed. The release workflow will build and publish binaries."
