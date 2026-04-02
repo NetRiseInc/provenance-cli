@@ -97,7 +97,7 @@ runs:
         esac
 
         if [ "$PLATFORM_OS" = "linux" ] && [ "$PLATFORM_ARCH" = "x86_64" ]; then
-          ARCHIVE_NAME="provenance-linux-x86_64-gnu"
+          ARCHIVE_NAME="provenance-linux-x86_64-musl"
         elif [ "$PLATFORM_OS" = "darwin" ] && [ "$PLATFORM_ARCH" = "x86_64" ]; then
           ARCHIVE_NAME="provenance-darwin-x86_64"
         elif [ "$PLATFORM_OS" = "darwin" ] && [ "$PLATFORM_ARCH" = "aarch64" ]; then

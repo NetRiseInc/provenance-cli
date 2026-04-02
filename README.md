@@ -32,13 +32,19 @@ Requires Rust 1.70+. For OCI container scanning, [syft](https://github.com/ancho
 
 Download from the [Releases page](https://github.com/NetRiseInc/provenance-cli/releases/latest).
 
-Available for: Linux (x86_64 glibc, x86_64 musl, aarch64), macOS (x86_64, aarch64/Apple Silicon).
+Available for: Linux (x86_64, aarch64), macOS (x86_64, aarch64/Apple Silicon).
 
 ```bash
-# Example: download and install latest for Linux x86_64
-curl -sL https://github.com/NetRiseInc/provenance-cli/releases/latest/download/provenance-linux-x86_64-gnu.tar.gz | tar xz
+# Linux x86_64 (statically linked, works on any distro)
+curl -sL https://github.com/NetRiseInc/provenance-cli/releases/latest/download/provenance-linux-x86_64-musl.tar.gz | tar xz
+sudo mv provenance /usr/local/bin/
+
+# macOS Apple Silicon
+curl -sL https://github.com/NetRiseInc/provenance-cli/releases/latest/download/provenance-darwin-aarch64.tar.gz | tar xz
 sudo mv provenance /usr/local/bin/
 ```
+
+> **Note:** The Linux binary is statically linked (musl) and has no runtime dependencies. A glibc-linked variant (`provenance-linux-x86_64-gnu`) is also available for environments that prefer dynamic linking.
 
 ## Quick start
 
