@@ -208,7 +208,7 @@ The `examples/policies/` directory includes ready-to-use policies:
 
 | File | What it enforces |
 |------|-----------------|
-| `ofac-compliance.yaml` | Flags contributors from OFAC-sanctioned countries (CU, IR, KP, SY, RU) |
+| `ofac-compliance.yaml` | Flags contributors from OFAC-sanctioned countries (CU, IR, KP, RU) |
 | `supply-chain-compromise.yaml` | Detects supply chain compromise indicators -- advisories, signing key changes |
 | `repo-health.yaml` | Enforces repository health standards -- bus factor, staleness, scorecard scores |
 | `contributor-risk.yaml` | Flags contributor risk -- breached credentials combined with key changes |
