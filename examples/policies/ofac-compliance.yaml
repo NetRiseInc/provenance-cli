@@ -8,11 +8,10 @@
 # than outright denying, since open source contributors may be US persons
 # or dual nationals who happen to be located in sanctioned countries.
 #
-# Sanctioned countries (as of 2024):
+# Sanctioned countries (as of 2026):
 #   CU - Cuba
 #   IR - Iran
 #   KP - North Korea
-#   SY - Syria
 #   RU - Russia (partial sanctions)
 #
 # Customize by:
@@ -51,7 +50,6 @@ spec:
         contributor_countries:
           - CU
           - IR
-          - SY
 
     # Warn on Russian contributors (partial sanctions)
     - name: warn-russia-contributors
